@@ -6,14 +6,14 @@ This repository contains scripts used in the analysis of
 Communications should be sent to
 * jp.verta@gmail.com
 
-Analysis steps (in order of results in article):
+Steps to produce primary alignments and perform CuffLinks expression analyses described in methods section of the article.
 
-Calculating the different data statistics/compiling the data frames (primary alignments/expression analyses described in methods of the article)
+Analysis steps (in order of results in article)
 * PCAanalysis.r
 * PCAloadingPlot.r
 * DEanalysisPureEcotypes.r
 * PCAvsDE.r
-* makePopGenTracksTSS
+* makePopGenTracksTSS.r
 * popGenPlotsTSS.r
 * CSSversusCompPC.r
 * combineAseReadCountFiles.r

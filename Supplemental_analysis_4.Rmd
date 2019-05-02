@@ -37,7 +37,7 @@ We are asking what is the minimum count difference between parents at which our 
 library(MASS)
 
 # load count data
-normCounts = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/aseReadCounts_c363_PF1_infSites_totalCov_DESeqNormalized_STAR_duprem.txt',stringsAsFactors=F,header=T)
+normCounts = read.table('.../aseReadCounts_c363_PF1_infSites_totalCov_DESeqNormalized_STAR_duprem.txt',stringsAsFactors=F,header=T)
 
 # define parameters of count data distribution based on observed data
 fit = fitdistr(as.integer(normCounts$c363_P_FC18_M_TOTCOV),densfun="negative binomial")
@@ -173,8 +173,8 @@ In theory, there is a gap in parental count difference between 5 and 7 where it 
 How does the count difference of 5 and 7 identified above as threshold values compare to the real differences observed?
 ```{r}
 # Load count difference and divergence class data from Tyne and Litc
-effects172 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects172_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
-effects363 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects172 = read.table('.../AseReadCountsEffects172_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects363 = read.table('.../AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
 
 # difference in counts between parents
 parentDiff172  = abs(effects172$FM - effects172$M)

@@ -24,8 +24,8 @@ library(gtools)
 
 Read in PCA loadings, calculate loading for composite PC and identify 1% extreme genes as in the main article.
 ```{r}
-PC2 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC2_loadings.txt')
-PC5 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC5_loadings.txt')
+PC2 = read.table('.../Tyne_Litc_PC2_loadings.txt')
+PC5 = read.table('.../Tyne_Litc_PC5_loadings.txt')
 
 PC = data.frame(x=0.145*PC2$x+0.063*-1*PC5$x)
 rownames(PC) = rownames(PC2)
@@ -42,7 +42,7 @@ abline(h=quantile(PC$x,probs=c(0.99)),lty=2)
 Load counts, subset, calculate PCA and composite PC loadings for original data.
 ```{r}
 # load
-normCounts = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/xlocCountTableVarTransformed.txt')
+normCounts = read.table('.../xlocCountTableVarTransformed.txt')
 
 # only pure ecotypes
 sel = c(
@@ -223,16 +223,15 @@ After thousand shuffles, compare the distribution of random generated composite 
 # permutedPvalues = unlist(mclapply(extremePCglobal, permutatePC, mc.cores = numCores))
 # 
 # # save results
-# save.image("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/PCAloadingPermutation.RData")
+# save.image(".../PCAloadingPermutation.RData")
 
 # load results
-load("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/PCAloadingPermutation.RData")
+load(".../PCAloadingPermutation.RData")
 ```
 
 Correct all P-values for multiple testing.
 ```{r}
 PCfdr = p.adjust(permutedPvalues,method="fdr")
-#PCqvalue = qvalue(permutedPvalues)$qvalues
 ```
 
 
@@ -246,9 +245,6 @@ hist(PCfdr,breaks=100, main="Distribution of FDR values",xlab="FDR")
 
 # average FDR over all composite PC outliers
 median(PCfdr)
-
-# q-value (the minimum false discovery rate at which the statistic can be called significant)
-#hist(PCqvalue,breaks=100)
 ```
 
 

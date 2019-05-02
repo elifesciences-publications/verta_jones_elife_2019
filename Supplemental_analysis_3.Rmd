@@ -18,7 +18,7 @@ In a recent publication, Fraser (2019 Trends in Genetics, 35(1), 88) articulated
 
 Load data.
 ```{r}
-effects363 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects363 = read.table('.../AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
 ```
 
 Calculate the log(parent1:parent2) and log(allele1:allele2) values based on fold change.

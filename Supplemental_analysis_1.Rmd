@@ -24,7 +24,7 @@ library(RColorBrewer)
 Load counts and sample information.
 ```{r}
 # Load normalized counts
-normCounts = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/xlocCountTableVarTransformed.txt',stringsAsFactors=F,header=T)
+normCounts = read.table('.../xlocCountTableVarTransformed.txt',stringsAsFactors=F,header=T)
 
 # Define metadata
 sel = c(
@@ -241,9 +241,9 @@ theme(plot.title = element_text(hjust = 0.5))
 # 
 # PCfdrTyne = p.adjust(permutedPvaluesTyne,method="fdr")
 
-#save.image("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/CisTransOverrepresentation.RData")
+#save.image(".../CisTransOverrepresentation.RData")
 
-#load("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/CisTransOverrepresentation.RData")
+#load(".../CisTransOverrepresentation.RData")
 
 hist(PCfdrTyne,breaks=100,main="Distribution of FDR values (Tyne Fw-Mar outliers)",xlab="FDR")
 median(PCfdrTyne)
@@ -257,8 +257,8 @@ median(PCfdrTyne)
 
 Calculate composite PC outliers and define set of genes with same sign expression difference between ecotypes in both Tyne and Litc.
 ```{r}
-PC2 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC2_loadings.txt')
-PC5 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC5_loadings.txt')
+PC2 = read.table('.../Tyne_Litc_PC2_loadings.txt')
+PC5 = read.table('.../Tyne_Litc_PC5_loadings.txt')
 
 PC = data.frame(x=0.145*PC2$x+0.063*-1*PC5$x)
 rownames(PC) = rownames(PC2)
@@ -297,7 +297,7 @@ sameSignLR = normLR[which(abs(apply(signLR[,c("normLR363","normLR172")],1,sum)) 
 
 Load effect tables (combined F1's, best effect per xloc in each F1), reorder classes for plotting purposes and calculate summary frequencies for effect classes.
 ```{r}
-effects172 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects172_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects172 = read.table('.../AseReadCountsEffects172_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
 effects172$colClass = factor(effects172$colClass,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
 colList172=lapply(split(effects172,effects172$source),'[[','colClass')
 freqList172 = lapply(colList172,table)
@@ -305,7 +305,7 @@ freqList172PCT = mapply("/",freqList172,lapply(freqList172,sum),SIMPLIFY = FALSE
 # assign compPC to xloc
 effects172$compPC = PC[effects172$xloc,'x']
 
-effects363 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects363 = read.table('.../AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
 effects363$colClass = factor(effects363$colClass,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
 colList363=lapply(split(effects363,effects363$source),'[[','colClass')
 freqList363 = lapply(colList363,table)

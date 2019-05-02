@@ -1,0 +1,239 @@
+---
+title: "Comparison of subtraction methods for estimating cis and trans divergence"
+output:
+  word_document:
+    reference_docx: /Users/verta/RMarkdown/word_style_1.docx
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(gplots)
+library(gtools)
+```
+
+In the analysis below, we compare three different subtraction-based methods to calculate the magnitude of cis and trans divergence in gene expression. All methods are based on the simple premise that expression divergence observed between parents that is not attributed to cis-acting differences is due to differences in trans-acting background (i.e. trans=log(parent1:parent2)-log(allele1:allele2)). This notion was first introduced in this context by Wittkopp et al (2008) and has since been widely used.
+
+In a recent publication, Fraser (2019 Trends in Genetics, 35(1), 88) articulated a key consideration using this method. When estimating trans divergence based on subtraction, statistical errors in cis-estimation can be automatically negatively correlated with the errors in trans-estimation; any overestimation of cis-divergence may automatically lead to an underestimation of trans divergence. If this is the case, we expect that the estimates of cis and trans divergence would be negatively correlated with each other (for any one gene high cis-value would automatically lead to low trans value and identically for low cis values). In the analysis below, we use our dataset to estimate cis and trans divergence using three different subtraction approaches, including the one proposed by Fraser (2019).
+
+Load data.
+```{r}
+effects363 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+```
+
+Calculate the log(parent1:parent2) and log(allele1:allele2) values based on fold change.
+```{r}
+effects363$Plogratio = foldchange2logratio(effects363$P.fm.m)
+effects363$F1logratio = foldchange2logratio(effects363$F1.fm.m)
+```
+
+
+Select for genes that have measurements in all F1's.
+```{r}
+litcSharedXloc = attr(venn(list(effects363[which(effects363$source=="div01F"),"xloc"],
+                                effects363[which(effects363$source=="div01M"),"xloc"],
+                                effects363[which(effects363$source=="div02F"),"xloc"],
+                                effects363[which(effects363$source=="div02M"),"xloc"]),
+                           show.plot=F),"intersect")$'A:B:C:D'
+```
+
+## Calculate cis and trans divergence separately for each F1
+This is the method that has drawn critique lately - we'll investigate if this method is problematic in our dataset.
+```{r}
+cis363 = data.frame(cis=effects363$F1logratio[which(effects363$xloc %in% litcSharedXloc)],
+                    F1=effects363$source[which(effects363$xloc %in% litcSharedXloc)],
+                    colClass = effects363$colClass[which(effects363$xloc %in% litcSharedXloc)],
+                    xloc = effects363$xloc[which(effects363$xloc %in% litcSharedXloc)])
+
+trans363 = data.frame(trans=effects363$Plogratio[which(effects363$xloc %in% litcSharedXloc)] - effects363$F1logratio[which(effects363$xloc %in% litcSharedXloc)],
+                      F1=effects363$source[which(effects363$xloc %in% litcSharedXloc)],
+                      colClass = effects363$colClass[which(effects363$xloc %in% litcSharedXloc)],
+                      xloc = effects363$xloc[which(effects363$xloc %in% litcSharedXloc)])
+```
+
+Plot cis and trans estimates for all genes. According to Fraser (2019), if estimates of cis and trans are significantly negatively correlated, the method should be avoided. 
+```{r}
+cor363 = cor(cis363$cis[which(cis363$F1=="div01F")],trans363$trans[which(cis363$F1=="div01F")])
+
+plot(cis363$cis[which(cis363$F1=="div01F")],trans363$trans[which(cis363$F1=="div01F")],
+     main=paste("Whole dataset (example F1) r:",round(cor363,2)),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+cor363cis = cor(cis363$cis[which(cis363$F1=="div01F" & cis363$colClass=="cis")],trans363$trans[which(cis363$F1=="div01F" & trans363$colClass=="cis")])
+
+plot(cis363$cis[which(cis363$F1=="div01F" & cis363$colClass=="cis")],trans363$trans[which(cis363$F1=="div01F" & trans363$colClass=="cis")],
+     main=paste("Genes assigned as cis (example F1) r:",round(cor363cis,2)),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+cor363trans = cor(cis363$cis[which(cis363$F1=="div01F" & cis363$colClass=="trans")],trans363$trans[which(cis363$F1=="div01F" & trans363$colClass=="trans")])
+
+plot(cis363$cis[which(cis363$F1=="div01F" & cis363$colClass=="trans")],trans363$trans[which(cis363$F1=="div01F" & trans363$colClass=="trans")],
+     main=paste("Genes assigned as trans (example F1) r:",round(cor363trans,2)),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+```
+
+It indeed seems to be the case that estimates of cis and trans divergences are moderately negatively correlated when looking at the whole data set. However, when genes are subsetted according to the test of Landry et al (2005), correlation between estimates reduced to moderate levels for cis-diverged genes.
+
+
+## Use first two F1's to estimate cis and second two to estimate trans. (CRC; cross replicate correlation)
+This is an application of the approach of Fraser (2019) to minimize the potential bias caused by correlated errors in cis and trans estimates.
+```{r}
+CRCcis363 = data.frame(cis=apply(data.frame(effects363$F1logratio[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div01F")],
+                             effects363$F1logratio[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div01M")]),
+                  1,mean),
+                      xloc = effects363$xloc[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div01F")])
+  
+CRCtrans363 = data.frame(trans=apply(data.frame(effects363$Plogratio[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div02F")] -
+                                 effects363$F1logratio[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div02F")],
+                             effects363$Plogratio[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div02M")] -
+                               effects363$F1logratio[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div02M")]),
+                  1,mean),
+                      xloc = effects363$xloc[which(effects363$xloc %in% litcSharedXloc & effects363$source=="div01F")])
+```
+
+Assign divergence classes of all F1's to the CRC values for each gene.
+```{r}
+CRCcis363$colClass = aggregate(cis363$colClass,by=list(factor(cis363$xloc,levels=unique(cis363$xloc))),FUN=unique)
+CRCtrans363$colClass = aggregate(trans363$colClass,by=list(factor(trans363$xloc,levels=unique(trans363$xloc))),FUN=unique)
+```
+
+
+Plot cross-replicate correlation cis and trans estimates. According to Fraser (2019), there should be little negative correlation between cis and trans estimates.
+```{r}
+CRCcor363 = cor(data.frame(cis=CRCcis363$cis,trans=CRCtrans363$trans))
+
+plot(CRCcis363$cis,CRCtrans363$trans,
+     main=paste("Whole dataset (CRC) r:",round(CRCcor363,2)[1,2]),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+cisGenes = CRCcis363$xloc[which(unlist(lapply(CRCcis363$colClass$x,function(x){all(x == "cis")})))]
+transGenes = CRCtrans363$xloc[which(unlist(lapply(CRCtrans363$colClass$x,function(x){all(x == "trans")})))]
+
+CRCcor363cis = cor(CRCcis363$cis[which(CRCcis363$xloc %in% cisGenes)],CRCtrans363$trans[which(CRCtrans363$xloc %in% cisGenes)])
+
+plot(CRCcis363$cis[which(CRCcis363$xloc %in% cisGenes)],CRCtrans363$trans[which(CRCtrans363$xloc %in% cisGenes)],
+     main=paste("Genes assigned as cis (CRC) r:",round(CRCcor363cis,2)),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+CRCcor363trans = cor(CRCcis363$cis[which(CRCcis363$xloc %in% transGenes)],CRCtrans363$trans[which(CRCtrans363$xloc %in% transGenes)])
+
+plot(CRCcis363$cis[which(CRCcis363$xloc %in% transGenes)],CRCtrans363$trans[which(CRCtrans363$xloc %in% transGenes)],
+     main=paste("Genes assigned as trans (CRC) r:",round(CRCcor363trans,2)),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+```
+
+As a conclusion, applied to our data set, the CRC does seem to reduce the level of correlation between cis and trans estimates.
+
+Below, we compare the estimates for cis and trans divergence using the two approaches above; individual F1's and the approach of Fraser (2019).
+```{r}
+cisGenes = cis363$xloc[which(cis363$F1=="div01F" & cis363$colClass=="cis")]
+transGenes = trans363$xloc[which(trans363$F1=="div01F" & trans363$colClass=="trans")]
+
+plot(cis363$cis[which(cis363$F1=="div01F" & cis363$colClass=="cis")],CRCcis363$cis[which(CRCcis363$xloc %in% cisGenes)],
+     main="Comparison of cis estimates",
+     xlab="individual cis estimate (log2 ratio)",
+     ylab="CRC cis estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+plot(trans363$trans[which(trans363$F1=="div01F" & trans363$colClass=="trans")],CRCtrans363$trans[which(CRCtrans363$xloc %in% transGenes)],
+     main="Comparison of trans estimates",
+     xlab="individual trans estimate (log2 ratio)",
+     ylab="CRC trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+```
+
+Taking together, both approaaches result in higly correlated estimates of cis and trans divergence.
+
+## Average cis and trans estimates across F1's.
+Calculate cis and trans divergence as per analysis in Figure 5. This is our alternative approach, where cis and trans estimates are calculated for individual F1's and the estimates are then averaged.
+```{r}
+AVEcis363 = aggregate(cis363$cis,by=list(factor(cis363$xloc,levels=unique(cis363$xloc))),FUN=mean)
+AVEcis363$colClass = aggregate(cis363$colClass,by=list(factor(cis363$xloc,levels=unique(cis363$xloc))),FUN=unique)
+
+AVEtrans363 = aggregate(trans363$trans,by=list(factor(trans363$xloc,levels=unique(trans363$xloc))),FUN=mean)
+AVEtrans363$colClass = aggregate(trans363$colClass,by=list(factor(trans363$xloc,levels=unique(trans363$xloc))),FUN=unique)
+```
+
+Below we plot correlation in averaged cis and trans estimates using genes assigned as cis or trans in all F1's (categories according to Landry et al 2005). Negative correlation indicates problems with approach according to Fraser (2019).
+```{r}
+AVEcor363 = cor(data.frame(cis=AVEcis363$x,trans=AVEtrans363$x))
+
+plot(AVEcis363$x,AVEtrans363$x,
+     main=paste("Whole dataset (averaged) r:",round(AVEcor363,2)[1,2]),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+cisGenes = AVEcis363$Group.1[which(unlist(lapply(AVEcis363$colClass$x,function(x){all(x == "cis")})))]
+transGenes = AVEtrans363$Group.1[which(unlist(lapply(AVEtrans363$colClass$x,function(x){all(x == "trans")})))]
+
+AVEcor363cis = cor(AVEcis363$x[which(AVEcis363$Group.1 %in% cisGenes)],AVEtrans363$x[which(AVEtrans363$Group.1 %in% cisGenes)])
+
+plot(AVEcis363$x[which(AVEcis363$Group.1 %in% cisGenes)],AVEtrans363$x[which(AVEtrans363$Group.1 %in% cisGenes)],
+     main=paste("Genes assigned as cis (averaged):",round(AVEcor363cis,2)),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+AVEcor363trans = cor(AVEcis363$x[which(AVEcis363$Group.1 %in% transGenes)],AVEtrans363$x[which(AVEtrans363$Group.1 %in% transGenes)])
+
+plot(AVEcis363$x[which(AVEcis363$Group.1 %in% transGenes)],AVEtrans363$x[which(AVEtrans363$Group.1 %in% transGenes)],
+     main=paste("Genes assigned as trans (averaged) r:",round(AVEcor363trans,2)),
+     xlab="cis estimate (log2 ratio)",
+     ylab="trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+```
+
+Below we compare cis and trans estimates produced using averaging over F1's and the approach of Fraser (2019).
+```{r}
+cisGenes = CRCcis363$xloc[which(unlist(lapply(CRCcis363$colClass$x,function(x){all(x == "cis")})))]
+transGenes = CRCtrans363$xloc[which(unlist(lapply(CRCtrans363$colClass$x,function(x){all(x == "trans")})))]
+
+AveCrcCorCis = cor(AVEcis363$x[which(AVEcis363$Group.1 %in% cisGenes)],CRCcis363$cis[which(CRCcis363$xloc %in% cisGenes)])
+
+plot(AVEcis363$x[which(AVEcis363$Group.1 %in% cisGenes)],CRCcis363$cis[which(CRCcis363$xloc %in% cisGenes)],
+     main=paste("Comparison of cis estimates, r:",round(AveCrcCorCis,2)),
+     xlab="Averaged cis estimate (log2 ratio)",
+     ylab="CRC cis estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+
+AveCrcCorTrans = cor(AVEtrans363$x[which(AVEtrans363$Group.1 %in% transGenes)],CRCtrans363$trans[which(CRCtrans363$xloc %in% transGenes)])
+
+plot(AVEtrans363$x[which(AVEtrans363$Group.1 %in% transGenes)],
+     CRCtrans363$trans[which(CRCtrans363$xloc %in% transGenes)],
+     main=paste("Comparison of trans estimates, r:",round(AveCrcCorTrans,2)),
+     xlab="Averaged trans estimate (log2 ratio)",
+     ylab="CRC trans estimate (log2 ratio)"
+     ,xlim=c(-10,10),ylim=c(-10,10))
+```
+
+
+## Conclusions
+
+We compared three different subtraction approaches to quantify the extent of cis and trans divergence.
+
+1. subtraction based on individual F1's
+
+2. subtraction based on individual replicates (Fraser 2019, "cross replicate correlation")
+
+3. subtraction based on averaged of individual F1's (used in our Figure 5)
+
+While approach 1. has drawn critique, we observed that for genes assigned as cis or trans divergent based on the test of Landry et al (2005), estimates of cis and trans divergence are only moderately correlated. This indicates that while overall the approach might be problematic, the approach can be used when combined with proper categorisation of cis and trans divergence.
+
+Comparing approaches 1. 2. and 3. we observed that averaging over cis and trans estimates of individual F1's and the CRC method of Fraser (2019) give comparable results. In other words, the approach we use in our Figure 5 is comparable to the method proposed by Fraser (2019). We believe this can be partly attributed to the nature of the material in our study; all F1's are different for the trans-acting genetic background, and thus averaging over F1's renders errors in cis and trans estimates uncorrelated. 
+
+
+
+

@@ -1,0 +1,258 @@
+---
+title: "PCA loading permutation test"
+output:
+  word_document:
+    reference_docx: /Users/verta/RMarkdown/word_style_1.docx
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+library(parallel)
+library(gtools)
+```
+
+# In this analysis, we define a false discovery rate (FDR) for parallel diverged genes based on PCA loadings.
+
+## Approach
+1. for each composite outlier gene shuffle the sample labels while keeping all other data as original
+2. re-calculate PCA and composite PC
+3. store the composite PC loading from the permutation
+* for each composite PC outlier, perform steps 1-3 to all possible combinations of sampling two groups of 8 individuals from 16
+* calculate Z-score and P-value for observing a loading higher than the permuted null
+* correct for multiple testing (FDR)
+
+Read in PCA loadings, calculate loading for composite PC and identify 1% extreme genes as in the main article.
+```{r}
+PC2 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC2_loadings.txt')
+PC5 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC5_loadings.txt')
+
+PC = data.frame(x=0.145*PC2$x+0.063*-1*PC5$x)
+rownames(PC) = rownames(PC2)
+extremePCglobal = rownames(PC)[which(PC$x<quantile(PC$x,probs=c(0.01)) | PC$x>quantile(PC$x,probs=c(0.99)))]
+```
+
+Plot sorted loadings for composite PC. Each bar represents composite PC loading for an individual gene. Dotted horizontal lines denote the cutoff values for 1% outliers. 
+```{r}
+barplot(sort(PC$x),ylim=c(-0.017,0.017), ylab="Composite PC loading")
+abline(h=quantile(PC$x,probs=c(0.01)),lty=2)
+abline(h=quantile(PC$x,probs=c(0.99)),lty=2)
+```
+
+Load counts, subset, calculate PCA and composite PC loadings for original data.
+```{r}
+# load
+normCounts = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/xlocCountTableVarTransformed.txt')
+
+# only pure ecotypes
+sel = c(
+'c172_P_532_F_lane8_0',
+'c172_P_533_M_lane8_0',
+'c172_P_532_F_lane3_0',
+'c172_P_533_M_lane3_0',
+
+'c169_P_432_F_0',
+'c169_P_342_M_0',
+'c208_P_321_F_0',
+'c208_P_531_M_0',
+'c209_P_341_F_0',
+'c209_P_422_M_0',
+
+'c212_P_454_F_0',
+'c212_P_551_M_0',
+
+'c214_P_524_F_0',
+'c214_P_512_M_0',
+
+'c363_P_FC08_F_0',
+'c363_P_FC18_M_0',
+
+'c358_P_FC12_F_0',
+'c358_P_FC09_M_0',
+'c357_P_FC14_F_0',
+'c357_P_FC06_M_0',
+'c353_P_FC05_F_0',
+'c353_P_FC15_M_0')
+
+river = c(rep('Tyne',10),rep('Forss',2),rep('Shiel',2),rep('Litc',8))
+
+eco = c(
+
+'M','F','M','F',
+
+'F',
+'M',
+'F',
+'M',
+'M',
+'F',
+
+'M',
+'F',
+
+'M',
+'F',
+
+'M',
+'F',
+
+'F',
+'M',
+'F',
+'M',
+'M',
+'F')
+
+design = data.frame(row.names=sel,river = river,eco = eco)
+
+
+# only Tyne and Litc pure strains
+sel = c('c172_P_532_F_lane3_0',
+'c172_P_533_M_lane3_0','c169_P_432_F_0',
+'c169_P_342_M_0',
+'c208_P_321_F_0',
+'c208_P_531_M_0',
+'c209_P_341_F_0',
+'c209_P_422_M_0',
+'c363_P_FC08_F_0',
+'c363_P_FC18_M_0',
+'c358_P_FC12_F_0',
+'c358_P_FC09_M_0',
+'c357_P_FC14_F_0',
+'c357_P_FC06_M_0',
+'c353_P_FC05_F_0',
+'c353_P_FC15_M_0')
+
+subNormCounts = normCounts[,sel]
+subDesign = design[sel,]
+subDesign$sex = c('Female','Male','Female','Male','Female','Male','Female','Male','Female','Male','Female','Male','Female','Male','Female','Male')
+
+pca = prcomp(t(subNormCounts),scale=F)
+compPC = data.frame(x=0.145*pca$rotation[,"PC2"]+0.063*-1*pca$rotation[,"PC5"])
+```
+
+
+## For each gene deemed as composite PC outlier (N=586)
+
+Calculate all possible combinations of samples (modified from FCJ original).
+```{r}
+mylist<-seq(1,16,by=1);
+
+#first create 12870 combinations of set_a (12870 ways to sample 8 fish from a set of 16)
+myperm<-combinations(16, 8, v=seq(1,16,by=1), set=F, repeats.allowed=F)
+
+#create an emptydataframe 
+#(cols1-8 are set1, cols9-16 set2, 17 collapsed string of set1, 18 collapsed string of set 2, 19:34 sets recoded as "M" and "F")
+mysets<-data.frame(matrix(vector(mode = 'numeric',length = 34*nrow(myperm)/2), nrow = nrow(myperm)/2, ncol = 34))
+icounter<-0;
+
+for (j in 1:length(myperm[,1])) {
+	#progress report
+	if((j%%500)==0) {
+		print(j);
+	}
+
+	#extract seta from row of permutation table
+	myperm_a<-myperm[j,];
+	#assign names so we can use it in the following lookup
+	names(myperm_a)<-myperm_a;
+	#lookup values of setb by requireing that these are NOT in names of seta perma
+	myperm_b<-mylist[-(myperm_a)];
+	#assign names to set b
+	names(myperm_b)<-myperm_b;
+	#collapse the sets into a single string of numbers (eg 12345678)
+	astring<-paste(myperm_a,sep='',collapse='');
+	bstring<-paste(myperm_b,sep='',collapse='');
+
+	#make a list of unique sets by only keeping the first time we've seen this perma/permb in the rownames.
+	if(((astring %in% row.names(mysets))==F)&((bstring %in% row.names(mysets))==F)) {
+		icounter<-icounter+1;
+		mysets[icounter,]<-c(myperm_a,myperm_b,astring,bstring,seq(1,16,by=1));
+		row.names(mysets)[icounter]<-astring;
+		mysets[icounter,myperm_a+18]<-rownames(subDesign[which(subDesign$eco == "F"),]);
+		mysets[icounter,myperm_b+18]<-rownames(subDesign[which(subDesign$eco == "M"),]);
+	} else {
+		#skip this because we have already seen it.
+	}		
+}
+
+#extract columns with M and F as factors from mysets dataframe above.
+permutedEco<-mysets[,19:34];
+```
+
+
+For a thousand random combinations
+
+* shuffle values for each gene one at a time
+* calculate PCA
+* calculate composite PC
+
+After thousand shuffles, compare the distribution of random generated composite PC loadings to the observed and calculate a P-value. (Loop for calculating the values commented out because takes ~20 h to run).
+```{r}
+# here you assign the random shuffling of samples to be tested - can be all possible combinations or a subsample of them (should be the same for all genes in the following loop)
+# randomCombs = rownames(permutedEco)
+# 
+# # detect how many cores the machine has available
+# numCores = detectCores()-2
+# 
+# # function that performs permutation and returns a P-value
+# permutatePC = function(x){
+#   print(paste("Permuting gene",which(extremePCglobal %in% x)))
+#   ptm = proc.time()[3]
+#   origLoad = compPC[x,"x"]
+#   # assign a new randomized data frame based on original data
+#   randCounts = subNormCounts
+#   randLoadings = c()
+#   for (y in 1:length(randomCombs)){
+#     colSel = permutedEco[randomCombs[y],]
+#     # shuffle the values of the permuted gene ("x"), values for all other genes remain unchanged
+#     randCounts[x,] = subNormCounts[x,as.character(colSel[1,])]
+#     # re-calculate PCA
+#     pcaRand = prcomp(t(randCounts),scale=F)
+#     compPCrand = data.frame(x=0.145*pcaRand$rotation[,"PC2"]+0.063*-1*pcaRand$rotation[,"PC5"])
+#     randLoadings[y] = compPCrand[x,]
+#   }
+#   zScore = (origLoad-mean(randLoadings))/sd(randLoadings)
+#   prob = 2*pnorm(abs(zScore),lower.tail = F)
+#   print(paste("Time per gene",proc.time()[3] - ptm))
+#   names(prob) = x
+#   return(prob)
+# }
+# 
+# # parallelize computation using maximum number of cores
+# permutedPvalues = unlist(mclapply(extremePCglobal, permutatePC, mc.cores = numCores))
+# 
+# # save results
+# save.image("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/PCAloadingPermutation.RData")
+
+# load results
+load("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/PCAloadingPermutation.RData")
+```
+
+Correct all P-values for multiple testing.
+```{r}
+PCfdr = p.adjust(permutedPvalues,method="fdr")
+#PCqvalue = qvalue(permutedPvalues)$qvalues
+```
+
+
+Get summary numbers for composite PC outliers
+```{r}
+# P-values for composite PC outliers - is the loading different from random loadings that we get for this gene when we destroy the sample structure (shuffle samples)
+hist(permutedPvalues,breaks=100)
+
+# FDR (Benjamini-Hochberg) (expected proportion of Type I errors among the rejected hypotheses)
+hist(PCfdr,breaks=100, main="Distribution of FDR values",xlab="FDR")
+
+# average FDR over all composite PC outliers
+median(PCfdr)
+
+# q-value (the minimum false discovery rate at which the statistic can be called significant)
+#hist(PCqvalue,breaks=100)
+```
+
+
+
+
+
+

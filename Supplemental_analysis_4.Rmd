@@ -1,0 +1,244 @@
+---
+title: "Power simulation for cis vs trans analysis"
+output:
+  word_document:
+    reference_docx: /Users/verta/RMarkdown/word_style_1.docx
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+```
+
+We use the following combination of tests to dissect parental difference into cis and trans:
+
+---------------------------------------------------------------------------------------------
+Divergence class  Alleles (binomial test) Parents (binomial test) Ratios (Fisher's exact test)
+----------------  ----------------------- ----------------------- ---------------------------
+cis               P>0.1 (A1≠A2)           P>0.1 (P1≠ P2)          NS (P1/P2 = A1/A2)
+
+trans             NS (A1= A2)             P>0.1 (P1≠ P2)          P>0.1 (P1/P2 ≠ A1/A2) 
+---------------------------------------------------------------------------------------------
+
+# Scenario A: all divergence between parents is in cis.
+
+We start by defining four count categories
+
+* parent 1 (P1)
+* parent 2 (P2)
+* allele from parent 1 (A1)
+* allele from parent 2 (A2)
+  
+Our assumption is that all differences between parents translate to equal difference between alleles.
+
+We are asking what is the minimum count difference between parents at which our testing scenario will give a significant result (P>0.1). We code this into a function to re-use it later. We simulate the counts as random variables from negative binomial based on parameters from the observed count data. The dataset used to define the distribution parameters can be based on any individual in the experiment.
+```{r}
+library(MASS)
+
+# load count data
+normCounts = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/aseReadCounts_c363_PF1_infSites_totalCov_DESeqNormalized_STAR_duprem.txt',stringsAsFactors=F,header=T)
+
+# define parameters of count data distribution based on observed data
+fit = fitdistr(as.integer(normCounts$c363_P_FC18_M_TOTCOV),densfun="negative binomial")
+
+# define function for binomial testing of count differences
+binomialTest = function(x,prob){
+  return(unlist(binom.test(c(as.integer(x[1]),as.integer(x[2])),p=prob)['p.value']))
+}
+
+
+# define function to run power analysis
+minimumCisDifference = function(n){
+
+  parent = c()
+  alleles = c()
+  ratios = c()
+  difference = c()
+  divClass = c()
+
+    # simulate count data from negative binomial distribution based on observed parameters 
+    P1 = rnbinom(n,size=fit$estimate[1],mu=fit$estimate[2])
+    P2 = rnbinom(n,size=fit$estimate[1],mu=fit$estimate[2])
+    
+    # calculate difference between "parents" for simulated data
+    difference = abs(P1-P2)
+    
+    # assume that alleles are expressed at the same levels as parents (i.e. cis)
+    A1 = P1
+    A2 = P2
+    
+    # binomial test for parents
+    parent = apply(X=data.frame(P1,P2),MARGIN=1,FUN=binomialTest,prob=0.5)
+
+    # binomial test for alleles
+    alleles =  apply(X=data.frame(A1,A2),MARGIN=1,FUN=binomialTest,prob=0.5)
+    
+    # fisher's test for ratios
+    for (i in 1:n){
+      ratios[i] = fisher.test(data.frame(c(P1[i],P2[i]),c(A1[i],A2[i])))$p.value
+    }
+    
+    # only cis --> A1!=A2 & P1!=P2 & A1:A2==P1:P2  
+    divClass[alleles<0.1 & parent<0.1 & ratios>0.1] = "cis"
+
+    return(list(difference,parent,alleles,ratios,divClass))
+}
+
+# run the simulation for 10,000 "genes"
+cisSimulation = minimumCisDifference(10000)
+names(cisSimulation) = c("difference","parent","alleles","ratios","divClass")
+```
+
+Here we plot the relationship between the P-values for the binomial tests for parent difference (x-axis) and allele difference (y-axis).
+```{r}
+plot(cisSimulation$parent,cisSimulation$alleles,xlab="Parental diffence P-value (binomial test)",ylab="Allelic difference P-value (binomial test)")
+```
+
+Here we plot the relationship between the P-value of the binomial test of parent difference (x-axis) and the difference in counts between the parents (y-axis). **Shaded are corresponding to the parent difference resulting in a significant classification as "cis".**
+```{r}
+plot(cisSimulation$parent,cisSimulation$difference,xlab="Parental diffence P-value (binomial test)",ylab="Count difference between parents",ylim=c(0,100),col="white")
+rect(-0.1,min(cisSimulation$difference[which(is.na(cisSimulation$divClass)==F)]),max(cisSimulation$parent[which(is.na(cisSimulation$divClass)==F)]),1000,col="grey",alpha=0.2)
+points(cisSimulation$parent,cisSimulation$difference)
+```
+
+# Scenario B: all divergence between parents is in trans.
+
+Next, we will perform the same analysis but assuming that all divergence between parents is in trans.
+```{r}
+# define function to run power analysis
+minimumTransDifference = function(n){
+
+  parent = c()
+  alleles = c()
+  ratios = c()
+  difference = c()
+  divClass = c()
+
+    P1 = rnbinom(n,size=fit$estimate[1],mu=fit$estimate[2])
+    P2 = rnbinom(n,size=fit$estimate[1],mu=fit$estimate[2])
+    
+    difference = abs(P1-P2)
+    
+    # assume that alleles are expressed at the average level of parents (i.e. trans)
+    A1 = apply(data.frame(P1,P2),1,mean)
+    A2 = apply(data.frame(P1,P2),1,mean)
+    
+    # binomial test for parents
+    parent = apply(X=data.frame(P1,P2),MARGIN=1,FUN=binomialTest,prob=0.5)
+
+    # binomial test for alleles
+    alleles =  apply(X=data.frame(A1,A2),MARGIN=1,FUN=binomialTest,prob=0.5)
+    
+    # fisher's test for ratios
+    for (i in 1:n){
+      ratios[i] = fisher.test(data.frame(c(P1[i],P2[i]),c(A1[i],A2[i])))$p.value
+    }
+    
+    # only trans --> A1==A2 & P1!=P2 & A1:A2!=P1:P2 
+    divClass[alleles>0.1 & parent<0.1 & ratios<0.1] = "trans"
+
+    return(list(difference,parent,alleles,ratios,divClass))
+}
+
+transSimulation = minimumTransDifference(10000)
+names(transSimulation) = c("difference","parent","alleles","ratios","divClass")
+```
+
+Here we run the same diagnostic plots as above. **Shaded are corresponding to the parent difference resulting in a significant classification as "trans".**
+```{r}
+plot(transSimulation$parent,transSimulation$alleles,xlab="Parental diffence P-value (binomial test)",ylab="Allelic difference P-value (binomial test)")
+
+plot(transSimulation$parent,transSimulation$difference,xlab="Parental diffence P-value (binomial test)",ylab="Count difference between parents",ylim=c(0,100),col="white")
+rect(-0.1,min(transSimulation$difference[which(is.na(transSimulation$divClass)==F)]),max(transSimulation$parent[which(is.na(transSimulation$divClass)==F)]),1000,col="grey",alpha=0.2)
+points(transSimulation$parent,transSimulation$difference)
+```
+
+# Comparison of cis and trans
+
+Lets find the minimum count difference that resulted in a significant test assuming that 
+
+* all difference between parents translates to cis
+```{r}
+min(cisSimulation$difference[which(is.na(cisSimulation$divClass)==F)])
+```
+
+* all difference between parents translates to trans
+```{r}
+min(transSimulation$difference[which(is.na(transSimulation$divClass)==F)])
+```
+
+In theory, there is a gap in parental count difference between 5 and 7 where it is possible to detect cis-difference, but not trans difference. Next we will investigate how prelavent are the genes falling into this gap in our dataset and how big of a problem the observed difference in statistical power is.
+
+How does the count difference of 5 and 7 identified above as threshold values compare to the real differences observed?
+```{r}
+# Load count difference and divergence class data from Tyne and Litc
+effects172 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects172_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects363 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+
+# difference in counts between parents
+parentDiff172  = abs(effects172$FM - effects172$M)
+parentDiff363  = abs(effects363$FM - effects363$M)
+
+# difference in counts in genes assigned as cis or trans
+parentDiff172cis = parentDiff172[which(effects172$colClass=="cis")]
+parentDiff172trans = parentDiff172[which(effects172$colClass=="trans")]
+parentDiff363cis = parentDiff363[which(effects363$colClass=="cis")]
+parentDiff363trans = parentDiff363[which(effects363$colClass=="trans")]
+```
+
+What are the frequencies of cis and trans assigned genes with given parental difference - do we see genes assigned as cis or trans with parent difference of 5 or 7?
+```{r}
+plot(density(parentDiff172cis),col="red",xlim=c(0,500),main="Tyne, cis (red), trans (blue)",xlab="Parental count difference")
+points(density(parentDiff172trans),col="blue",type="l")
+abline(v=5,col="red")
+abline(v=7,col="blue")
+
+plot(density(parentDiff363cis),col="red",xlim=c(0,500),main="Litc, cis (red), trans (blue)",xlab="Parental count difference")
+points(density(parentDiff363trans),col="blue",type="l")
+abline(v=5,col="red")
+abline(v=7,col="blue")
+```
+
+**The large majority of genes assigned as cis or trans show higher parental difference than 5 or 7 - the difference in power is likely to influence only a small proportion of genes.**
+
+Theoretically there is a gap between 5-7 count difference where its possible to detect cis but not trans, how many genes fall into this gap?
+
+* in Tyne
+```{r}
+length(which(parentDiff172>5 & parentDiff172<7))
+```
+
+* in Litc
+```{r}
+length(which(parentDiff363>5 & parentDiff363<7))
+```
+
+What are the classes of these genes? How do their frequencies compare to the frequencies of genes not in this category?
+```{r}
+inslot172 = table(effects172$colClass[which(parentDiff172>5 & parentDiff172<7)])
+inslot363 = table(effects363$colClass[which(parentDiff363>5 & parentDiff363<7)])
+notinslot172 = table(effects172$colClass[which(parentDiff172>7)])
+notinslot363 = table(effects363$colClass[which(parentDiff363>7)])
+
+plotMatrix172 = as.matrix(plyr::rbind.fill(data.frame(rbind(notinslot172)),data.frame(rbind(inslot172))))
+colnames(plotMatrix172)=c("ambiguous","cis","cis-trans","cis+trans","compensatory","conserved","trans")
+
+plotMatrix363 = as.matrix(plyr::rbind.fill(data.frame(rbind(notinslot363)),data.frame(rbind(inslot363))))
+colnames(plotMatrix363)=c("ambiguous","cis","cis-trans","cis+trans","compensatory","conserved","trans")
+
+barplot(plotMatrix172,beside=T,main="Tyne, dark: delta(p) > 7, light: 5 < delta(P) < 7",las=2)
+barplot(plotMatrix363,beside=T,main="Litc, dark: delta(p) > 7, light: 5 < delta(P) < 7",las=2)
+```
+
+# Conclusions
+
+By simulating count differences between parents based on the distribution of observed data, we defined threshold values for minimal parental difference where cis and trans tests result in significant outcomes. The difference in power proved out to be small; cis test would result in significant outcome with a minimum parental difference of 5 counts, trans test with 7 counts. Theoretically there is a gap in parental difference between 5-7 counts where a cis test could result in significant outcome but trans test would fail to detect differences. In our observed data, 1144 genes fall into this category in Tyne and 1402 in Litc. These genes are assigned mainly into the "conserved" category of divergence classes. The large majority of genes assigned as cis or trans have higher parental difference than 5 or 7, indicating that the genes falling into the category of 5-7 parental difference are indeed "conserved" in regulation and that the difference in power does not influence the overall frequencies of cis and trans regulated genes. Indeed, we observe from above that trans-regulated genes tend on average to have larger parental difference compared to cis-regulated genes, and that this difference is observed with parental differences where our tests have equal power to detect differences (parental difference >>7).
+
+
+
+
+
+
+
+

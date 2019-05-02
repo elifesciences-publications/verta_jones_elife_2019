@@ -1,0 +1,411 @@
+---
+title: "Cis/trans over-representation"
+output:
+  word_document:
+    reference_docx: /Users/verta/RMarkdown/word_style_1.docx
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+library(ggplot2)
+library(reshape)
+library(gplots)
+library(gtools)
+library(parallel)
+library(RColorBrewer)
+```
+
+**Calculate PCA for Litc and Tyne to identify genes that have high PC loadings between freshwater and marine populations.**
+
+Load counts and sample information.
+```{r}
+# Load normalized counts
+normCounts = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/xlocCountTableVarTransformed.txt',stringsAsFactors=F,header=T)
+
+# Define metadata
+sel = c(
+'c172_P_532_F_lane8_0',
+'c172_P_533_M_lane8_0',
+'c172_P_532_F_lane3_0',
+'c172_P_533_M_lane3_0',
+
+'c169_P_432_F_0',
+'c169_P_342_M_0',
+'c208_P_321_F_0',
+'c208_P_531_M_0',
+'c209_P_341_F_0',
+'c209_P_422_M_0',
+
+'c212_P_454_F_0',
+'c212_P_551_M_0',
+
+'c214_P_524_F_0',
+'c214_P_512_M_0',
+
+'c363_P_FC08_F_0',
+'c363_P_FC18_M_0',
+
+'c358_P_FC12_F_0',
+'c358_P_FC09_M_0',
+'c357_P_FC14_F_0',
+'c357_P_FC06_M_0',
+'c353_P_FC05_F_0',
+'c353_P_FC15_M_0')
+
+river = c(rep('Tyne',10),rep('Forss',2),rep('Shiel',2),rep('Litc',8))
+
+eco = c(
+
+'M','F','M','F',
+
+'F',
+'M',
+'F',
+'M',
+'M',
+'F',
+
+'M',
+'F',
+
+'M',
+'F',
+
+'M',
+'F',
+
+'F',
+'M',
+'F',
+'M',
+'M',
+'F')
+
+design = data.frame(row.names=sel,river = river,eco = eco)
+```
+
+Subset the data to contain only Litc individuals.
+```{r}
+# Litc pure strains
+sel = c('c363_P_FC08_F_0',
+'c363_P_FC18_M_0',
+'c358_P_FC12_F_0',
+'c358_P_FC09_M_0',
+'c357_P_FC14_F_0',
+'c357_P_FC06_M_0',
+'c353_P_FC05_F_0',
+'c353_P_FC15_M_0')
+
+subNormCounts = normCounts[,sel]
+subDesign = design[sel,]
+subDesign$sex = c('Female','Male','Female','Male','Female','Male','Female','Male')
+```
+
+Run the PCA and plot the results.
+```{r}
+pca = prcomp(t(subNormCounts),scale=F)
+data <- cbind(pca$x,subDesign)
+percentVar <- round(100 * pca$sdev^2/sum(pca$sdev^2))
+ggplot(data, aes(PC1, PC2, color=eco, shape=river)) +
+scale_color_manual(values=c('darkblue','darkred')) +
+geom_point(size=8,stroke=2) +
+xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+scale_shape_manual(values=c(0,1))+
+theme(axis.text=element_text(hjust=1,size=24,colour='black'),panel.background=element_rect(fill='white',colour='black'),panel.grid.major=element_line(colour='grey78'),text=element_text(size=22),legend.position="right")+
+coord_fixed()+
+ggtitle("Little Campbell")+
+theme(plot.title = element_text(hjust = 0.5))
+```
+
+**Define a set of genes most differentially expressed between ecotypes based on their PC1 loadings (10% extreme values in both directions).**
+
+We select 10% extreme genes instead of a more conservative cutoff (e.g. 1%) for the following reason: if most significant cis-divergence between ecotypes is due to parallel divergence, and the background dataset are genes very highly differentially expressed between the ecotypes, the test would give a false-negative result. We believe this is especially problematic for the Tyne comparison, where expression divergence was generally low, and the expression divergence between ecotypes seems to be impacted by a parallel component in proportion more heavily than the Little Campbell ecotype-pair.
+
+```{r}
+PC = pca$rotation[,"PC1"]
+extremePC1litc = names(PC)[which(PC<quantile(PC,probs=c(0.1)) | PC>quantile(PC,probs=c(0.9)))]
+```
+
+Next, we use random sampling to calculate the FDR for the set of differentially expressed genes based on PC 1 loadings. (Pre-calculated and commented out)
+```{r}
+# permutedEco = matrix(nrow=10000,ncol=8)
+# for (i in 1:10000){
+#   permutedEco[i,1:8] = sample(seq(1,8))
+# }
+# permutedEco = unique(permutedEco)[1:1000,]
+# 
+# # detect how many cores the machine has available
+# numCores = detectCores()-2
+# 
+# # function that performs permutation and returns a P-value
+# permutatePC = function(x){
+#   print(paste("Permuting gene",which(extremePC1litc %in% x)))
+#   ptm = proc.time()[3]
+#   origLoad = PC[x]
+#   randCounts = subNormCounts
+#   randLoadings = c()
+#   for (y in 1:nrow(permutedEco)){
+#     colSel = permutedEco[y,]
+#     randCounts[x,] = subNormCounts[x,colSel]
+#     pcaRand = prcomp(t(randCounts),scale=F)
+#     PCrand = pcaRand$rotation[,"PC1"]
+#     randLoadings[y] = PCrand[x]
+#   }
+#   zScore = (origLoad-mean(randLoadings))/sd(randLoadings)
+#   prob = 2*pnorm(abs(zScore),lower.tail = F)
+#   print(paste("Time per gene",proc.time()[3] - ptm))
+#   names(prob) = x
+#   return(prob)
+# }
+# 
+# # parallelize computation using maximum number of cores
+# permutedPvaluesLitc = unlist(mclapply(extremePC1litc, permutatePC, mc.cores = numCores))
+# 
+# PCfdrLitc = p.adjust(permutedPvaluesLitc,method="fdr")
+# 
+# hist(PCfdrLitc,breaks=100)
+# median(PCfdrLitc)
+# 
+# save.image("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/CisTransOverrepresentation.RData")
+
+load("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/CisTransOverrepresentation.RData")
+
+hist(PCfdrLitc,breaks=100,main="Distribution of FDR values (Litc Fw-Mar outliers)",xlab="FDR")
+median(PCfdrLitc)
+```
+
+
+Perform the same steps for Tyne. (Pre-calculated and commented out, except output)
+```{r}
+# Tyne pure strains
+sel = c('c172_P_532_F_lane3_0',
+'c172_P_533_M_lane3_0','c169_P_432_F_0',
+'c169_P_342_M_0',
+'c208_P_321_F_0',
+'c208_P_531_M_0',
+'c209_P_341_F_0',
+'c209_P_422_M_0')
+
+subNormCounts = normCounts[,sel]
+subDesign = design[sel,]
+subDesign$sex = c('Female','Male','Female','Male','Female','Male','Female','Male')
+
+pca = prcomp(t(subNormCounts),scale=F)
+data <- cbind(pca$x,subDesign)
+percentVar <- round(100 * pca$sdev^2/sum(pca$sdev^2))
+ggplot(data, aes(PC1, PC2, color=eco, shape=river)) +
+scale_color_manual(values=c('darkblue','darkred')) +
+geom_point(size=8,stroke=2) +
+xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+scale_shape_manual(values=c(0,1))+
+theme(axis.text=element_text(hjust=1,size=24,colour='black'),panel.background=element_rect(fill='white',colour='black'),panel.grid.major=element_line(colour='grey78'),text=element_text(size=22),legend.position="right")+
+coord_fixed()+
+ggtitle("Tyne")+
+theme(plot.title = element_text(hjust = 0.5))
+
+# PC = pca$rotation[,"PC1"]
+# extremePC1tyne = names(PC)[which(PC<quantile(PC,probs=c(0.1)) | PC>quantile(PC,probs=c(0.9)))]
+# 
+# # detect how many cores the machine has available
+# numCores = detectCores()-2
+# 
+# # function that performs permutation and returns a P-value
+# permutatePC = function(x){
+#   print(paste("Permuting gene",which(extremePC1tyne %in% x)))
+#   ptm = proc.time()[3]
+#   origLoad = PC[x]
+#   randCounts = subNormCounts
+#   randLoadings = c()
+#   for (y in 1:nrow(permutedEco)){
+#     colSel = permutedEco[y,]
+#     randCounts[x,] = subNormCounts[x,colSel]
+#     pcaRand = prcomp(t(randCounts),scale=F)
+#     PCrand = pcaRand$rotation[,"PC1"]
+#     randLoadings[y] = PCrand[x]
+#   }
+#   zScore = (origLoad-mean(randLoadings))/sd(randLoadings)
+#   prob = 2*pnorm(abs(zScore),lower.tail = F)
+#   print(paste("Time per gene",proc.time()[3] - ptm))
+#   names(prob) = x
+#   return(prob)
+# }
+# 
+# # parallelize computation using maximum number of cores
+# permutedPvaluesTyne = unlist(mclapply(extremePC1tyne, permutatePC, mc.cores = numCores))
+# 
+# PCfdrTyne = p.adjust(permutedPvaluesTyne,method="fdr")
+
+#save.image("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/CisTransOverrepresentation.RData")
+
+#load("~/Documents/Manuscripts/ParallelCisTrans/scripts/revised/CisTransOverrepresentation.RData")
+
+hist(PCfdrTyne,breaks=100,main="Distribution of FDR values (Tyne Fw-Mar outliers)",xlab="FDR")
+median(PCfdrTyne)
+```
+
+
+
+
+
+**Now use the PCA outliers defined above to test for cis/trans over-representation in parallel diverged genes**
+
+Calculate composite PC outliers and define set of genes with same sign expression difference between ecotypes in both Tyne and Litc.
+```{r}
+PC2 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC2_loadings.txt')
+PC5 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/Tyne_Litc_PC5_loadings.txt')
+
+PC = data.frame(x=0.145*PC2$x+0.063*-1*PC5$x)
+rownames(PC) = rownames(PC2)
+extremePCglobal = rownames(PC)[which(PC$x<quantile(PC$x,probs=c(0.01)) | PC$x>quantile(PC$x,probs=c(0.99)))]
+
+mar363 = c(
+'c363_P_FC08_F_0',
+'c358_P_FC09_M_0',
+'c357_P_FC06_M_0',
+'c353_P_FC05_F_0')
+fw363 = c(
+'c363_P_FC18_M_0',
+'c358_P_FC12_F_0',
+'c357_P_FC14_F_0',
+'c353_P_FC15_M_0')
+
+mar172 = c(
+'c172_P_532_F_lane8_0',
+'c169_P_342_M_0',
+'c208_P_531_M_0',
+'c209_P_341_F_0')
+fw172 = c(
+'c172_P_533_M_lane8_0',
+'c169_P_432_F_0',
+'c208_P_321_F_0',
+'c209_P_422_M_0')
+
+normLR363 = foldchange2logratio(foldchange(apply(normCounts[,mar363],1,mean,na.rm=T),apply(normCounts[,fw363],1,mean,na.rm=T)))
+normLR172 = foldchange2logratio(foldchange(apply(normCounts[,mar172],1,mean,na.rm=T),apply(normCounts[,fw172],1,mean,na.rm=T)))
+normLR = cbind(normLR363,normLR172)
+
+# define xloc with the same sign of expression between freshwater and marine parents
+signLR = sign(normLR)
+sameSignLR = normLR[which(abs(apply(signLR[,c("normLR363","normLR172")],1,sum)) == 2), ]
+```
+
+Load effect tables (combined F1's, best effect per xloc in each F1), reorder classes for plotting purposes and calculate summary frequencies for effect classes.
+```{r}
+effects172 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects172_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects172$colClass = factor(effects172$colClass,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+colList172=lapply(split(effects172,effects172$source),'[[','colClass')
+freqList172 = lapply(colList172,table)
+freqList172PCT = mapply("/",freqList172,lapply(freqList172,sum),SIMPLIFY = FALSE)
+# assign compPC to xloc
+effects172$compPC = PC[effects172$xloc,'x']
+
+effects363 = read.table('/Users/verta/Documents/Backups/MPI/PJ035/results/AseReadCountsEffects363_bestQvalue_cisParentTrans_STAR_duprem_nosexFDR10.txt',header=T,stringsAsFactors=F)
+effects363$colClass = factor(effects363$colClass,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+colList363=lapply(split(effects363,effects363$source),'[[','colClass')
+freqList363 = lapply(colList363,table)
+freqList363PCT = mapply("/",freqList363,lapply(freqList363,sum),SIMPLIFY = FALSE)
+# assign compPC to xloc
+effects363$compPC = PC[effects363$xloc,'x']
+```
+
+Calculate overall frequencies for Litc and Tyne specific ecotype differences.
+```{r}
+colList172Pdiff=lapply(split(effects172[which(effects172$xloc %in% extremePC1tyne),],effects172$source[which(effects172$xloc %in% extremePC1tyne)]),'[[','colClass')
+freqList172Pdiff = lapply(colList172Pdiff,table)
+freqList172PCTPdiff = mapply("/",freqList172Pdiff,lapply(freqList172Pdiff,sum),SIMPLIFY = FALSE)
+
+colList363Pdiff=lapply(split(effects363[which(effects363$xloc %in% extremePC1litc),],effects363$source[which(effects363$xloc %in% extremePC1litc)]),'[[','colClass')
+freqList363Pdiff = lapply(colList363Pdiff,table)
+freqList363PCTPdiff = mapply("/",freqList363Pdiff,lapply(freqList363Pdiff,sum),SIMPLIFY = FALSE)
+```
+
+
+Calculate over-representation and plot. Background distribution is randomly sampled from the most differentially expressed genes between ecotypes based on PCA (separately for each river, above).
+```{r}
+# Tyne
+extreme172PC = effects172[which(effects172$xloc %in% extremePCglobal),]
+extreme172PC = extreme172PC[which(extreme172PC$xloc %in% rownames(sameSignLR)),]
+colListPCEx172=lapply(split(extreme172PC,extreme172PC$source),'[[','colClass')
+freqListPCEx172 = lapply(colListPCEx172,table)
+freqListPCEx172PCT = mapply("/",freqListPCEx172,lapply(freqListPCEx172,sum),SIMPLIFY = FALSE)
+
+# Litc
+extreme363PC = effects363[which(effects363$xloc %in% extremePCglobal),]
+extreme363PC = extreme363PC[which(extreme363PC$xloc %in% rownames(sameSignLR)),]
+colListPCEx363=lapply(split(extreme363PC,extreme363PC$source),'[[','colClass')
+freqListPCEx363 = lapply(colListPCEx363,table)
+freqListPCEx363PCT = mapply("/",freqListPCEx363,lapply(freqListPCEx363,sum),SIMPLIFY = FALSE)
+
+plot172 = data.frame(class=melt(freqListPCEx172PCT)$Var.1,value=melt(freqListPCEx172PCT)$value - melt(freqList172PCT)$value, F1=melt(freqListPCEx172PCT)$L1)
+plot172$class = factor(plot172$class,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+plot172 = plot172[which(plot172$class %in% c('cis','trans','cis+trans','cis-trans','compensatory','conserved')),]
+
+plot363 = data.frame(class=melt(freqListPCEx363PCT)$Var.1,value=melt(freqListPCEx363PCT)$value - melt(freqList363PCT)$value, F1=melt(freqListPCEx363PCT)$L1)
+plot363$class = factor(plot363$class,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+plot363 = plot363[which(plot363$class %in% c('cis','trans','cis+trans','cis-trans','compensatory','conserved')),]
+
+# initiate random list of effects...
+rand172=data.frame(class=melt(freqListPCEx172PCT)$Var.1,F1=melt(freqListPCEx172PCT)$L1)
+rand363=data.frame(class=melt(freqListPCEx363PCT)$Var.1,F1=melt(freqListPCEx363PCT)$L1)
+
+for (i in 3:1003){
+  
+    # following selection reads: all genes differentially expressed between ecotypes
+    random363PC = effects363[sample(rownames(effects363[which(effects363$xloc %in% extremePC1litc),]),586),]
+    #--------------------------------------------------#
+    colListPCRand363=lapply(split(random363PC,random363PC$source),'[[','colClass')
+    freqListPCRand363 = lapply(colListPCRand363,table)
+    freqListPCRand363PCT = mapply("/",freqListPCRand363,lapply(freqListPCRand363,sum),SIMPLIFY = FALSE)
+    
+    # following selection reads: all genes differentially expressed between ecotypes
+    random172PC = effects172[sample(rownames(effects172[which(effects172$xloc %in% extremePC1tyne),]),586),]
+    #--------------------------------------------------#
+    colListPCRand172=lapply(split(random172PC,random172PC$source),'[[','colClass')
+    freqListPCRand172 = lapply(colListPCRand172,table)
+    freqListPCRand172PCT = mapply("/",freqListPCRand172,lapply(freqListPCRand172,sum),SIMPLIFY = FALSE)
+    
+    plot172 = data.frame(class=melt(freqListPCRand172PCT)$Var.1,value=melt(freqListPCRand172PCT)$value - melt(freqList172PCTPdiff)$value, F1=melt(freqListPCRand172PCT)$L1)
+    plot172$class = factor(plot172$class,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+    plot363 = data.frame(class=melt(freqListPCRand363PCT)$Var.1,value=melt(freqListPCRand363PCT)$value - melt(freqList363PCTPdiff)$value, F1=melt(freqListPCRand363PCT)$L1)
+    plot363$class = factor(plot363$class,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+    
+    rand172[,i]=plot172$value
+    rand363[,i]=plot363$value
+    
+}
+
+plotRand = gdata::combine(melt(rand172),melt(rand363),names=c('Tyne','Litc'))
+plotRand$class = factor(plotRand$class,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+plotRand = plotRand[which(plotRand$class != 'ambiguous'),]
+
+# observed
+plot172 = data.frame(class=melt(freqListPCEx172PCT)$Var.1,value=melt(freqListPCEx172PCT)$value - melt(freqList172PCTPdiff)$value, F1=melt(freqListPCEx172PCT)$L1)
+plot172$class = factor(plot172$class,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+plot172 = plot172[which(plot172$class %in% c('cis','trans','cis+trans','cis-trans','compensatory','conserved')),]
+plot363 = data.frame(class=melt(freqListPCEx363PCT)$Var.1,value=melt(freqListPCEx363PCT)$value - melt(freqList363PCTPdiff)$value, F1=melt(freqListPCEx363PCT)$L1)
+plot363$class = factor(plot363$class,levels=c('cis','trans','cis+trans','cis-trans','compensatory','conserved','ambiguous'))
+plot363 = plot363[which(plot363$class %in% c('cis','trans','cis+trans','cis-trans','compensatory','conserved')),]
+plotAll = gdata::combine(plot172,plot363,names=c('Tyne','Litc'))
+
+# plot
+#x11(height=3.5,width=3)
+cols = brewer.pal(6,"Set1")
+cols[6] = "#999999"
+ggplot() + geom_boxplot(data=plotRand,aes(source,value*100),colour="grey48",outlier.alpha=0) + 
+  geom_jitter(data=plotAll,aes(source,value*100,colour=as.factor(class)),height=0,width=0.1,size=4,alpha=0.5) + 
+  scale_colour_manual(values=cols,aesthetics = c("colour", "fill")) + 
+  theme(axis.text.x = element_text(angle=45, hjust=1,size=24,colour='black'),axis.title.x=element_blank(),panel.background=element_rect(fill='white',colour='grey78'),panel.grid.major=element_line(colour='white'),text=element_text(size=22),legend.position="none") +
+  ylim(-50,50) + 
+  facet_wrap(~class) +
+  ylab("Excess in parallel transcripts %")
+```
+
+
+
+

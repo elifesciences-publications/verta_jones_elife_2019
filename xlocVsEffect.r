@@ -4,15 +4,16 @@
 #####################
 library(GenomicRanges)
 
+
 # xloc annotation
-geneFeatures = read.table('.../assembly/merged_assembly_STAR_UCSCgtf/mergedParsed.txt',stringsAsFactors=F,sep='\t',skip=1,fill=NA)
+geneFeatures = read.table('mergedParsed.txt',stringsAsFactors=F,sep='\t',skip=1,fill=NA)
 colnames(geneFeatures) = c('chrom','source','type','start','end','V6','strand','V8','V9','gene_id','isoform','exon','name','nearestRef','classCode')
 xlocRange = makeGRangesFromDataFrame(geneFeatures,keep.extra.columns=T)
 
 # load effect table
-ind = 'c214_F1_1_M'
+ind = 'c363_F1_2_M'
 
-effectTable = read.table(paste('.../effectTable_',ind,'_FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep=''),header=T,stringsAsFactors=F)
+effectTable = read.table(paste('effectTable_',ind,'_FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep=''),header=T,stringsAsFactors=F)
 
 eRange = makeGRangesFromDataFrame(data.frame(chrom=effectTable[,1],start=effectTable[,2],end=effectTable[,2]+1,effectTable[,3:ncol(effectTable)]),keep.extra.columns=T)
 
@@ -48,7 +49,7 @@ effectTable = as.data.frame(eRange)
 head(effectTable)
 
 # save the table with the xloc info
-write.table(effectTable,paste('.../effectTable_',ind,'_FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep=''))
+write.table(effectTable,paste('effectTable_',ind,'_FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep=''))
 rm(effectTable)
 rm(ind)
 

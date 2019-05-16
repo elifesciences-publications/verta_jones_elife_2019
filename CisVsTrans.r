@@ -4,13 +4,12 @@ library(ggplot2)
 library(qvalue)
 library(grid)
 
-setwd('.../')
 
 # clear memory
 rm(list=ls())
 
 # DESeq2 normalized counts for parents
-normCounts = read.table('.../aseReadCounts_c172_PallF1_infSites_totalCov_DESeqNormalized_STAR_duprem.txt',stringsAsFactors=F,header=T)
+normCounts = read.table('aseReadCounts_c172_PallF1_infSites_totalCov_DESeqNormalized_STAR_duprem.txt',stringsAsFactors=F,header=T)
 
 # average coverages of parents ran in two lanes
 normCounts$c172_P_532_F_TOTCOV = apply(normCounts[,c('c172_P_532_F_lane3_TOTCOV','c172_P_532_F_lane8_TOTCOV')],1,mean)
@@ -23,7 +22,7 @@ ind='20_M'
 
 
 # ASE table
-aseBed = read.table(paste('.../aseTable_c172_F1',ind,'FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep='_'),header=T,stringsAsFactors=F)
+aseBed = read.table(paste('aseTable_c172_F1',ind,'FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep='_'),header=T,stringsAsFactors=F)
 rownames(aseBed) = paste(aseBed[,1],aseBed[,2],sep=':')
 
 # take overlap (only positions tested for ASE)
@@ -88,6 +87,10 @@ P[,'cis_qvalue'] = Qcis
 # parse all genes that have not been tested for all comparisons
 P = na.omit(P)
 
+# remove SNPs where one or the other parent or one or the pther allele has zero counts
+P = P[which(is.infinite(P$P.fm.m)==F),]
+P = P[which(is.infinite(P$F1.fm.m)==F),]
+
 # labels
 P[,'trans'] = FALSE
 P[P[,'trans_qvalue']<0.1, 'trans'] = TRUE
@@ -99,10 +102,10 @@ P[,'parent'] = FALSE
 P[P[,'parent_qvalue']<0.1,'parent'] = TRUE
 
 P[,'cis+trans'] = FALSE
-P[P[,'cis'] & P[,'trans'] & P[,'parent'] & sign(P[,'P.fm.m'])==sign(P[,'F1.fm.m']),'cis+trans'] = TRUE
+P[P[,'cis'] & P[,'trans'] & P[,'parent'] & P[,'P.fm.m']/P[,'F1.fm.m'] > 1,'cis+trans'] = TRUE
 
 P[,'cis-trans'] = FALSE
-P[P[,'cis'] & P[,'trans'] & P[,'parent'] & sign(P[,'P.fm.m'])!=sign(P[,'F1.fm.m']),'cis-trans'] = TRUE
+P[P[,'cis'] & P[,'trans'] & P[,'parent'] & P[,'P.fm.m']/P[,'F1.fm.m'] < 1,'cis-trans'] = TRUE
 
 P[,'compensatory'] = FALSE
 P[P[,'cis'] & P[,'trans'] & P[,'parent']==F,'compensatory'] = TRUE
@@ -112,10 +115,10 @@ P[P[,'cis'] & P[,'trans'] & P[,'parent']==F,'compensatory'] = TRUE
 P[,'colClass'] = NA             #
 #################################
 
-#---------------------------------------------------------------#
-# only cis --> A1!=A2 & P1!=P2 & A1:A2==P1:P2                   #
-P[P[,'cis'] & P[,'parent'] & P[,'trans']==F,'colClass'] = 'cis' #
-#---------------------------------------------------------------#
+#---------------------------------------------------------------------------------------------------------#
+# only cis --> A1!=A2 & P1!=P2 & A1:A2==P1:P2 & sign(A1:A2)==sign(P1:P2)                                  #
+P[P[,'cis'] & P[,'parent'] & P[,'trans']==F & sign(P[,'P.fm.m'])==sign(P[,'F1.fm.m']),'colClass'] = 'cis' #
+#---------------------------------------------------------------------------------------------------------#
 
 #-----------------------------------------------------------------#
 # only trans --> A1==A2 & P1!=P2 & A1:A2!=P1:P2                   #
@@ -123,12 +126,12 @@ P[P[,'trans'] & P[,'parent'] & P[,'cis']==F,'colClass'] = 'trans' #
 #-----------------------------------------------------------------#
 
 #------------------------------------------------------------------------------#
-# cis plus trans --> A1!=A2 & P1!=P2 & A1:A2!=P1:P2 & sign(A1:A2)==sign(P1:P2) #
+# cis plus trans --> A1!=A2 & P1!=P2 & A1:A2!=P1:P2 & P[,'P.fm.m']/P[,'F1.fm.m'] > 1 #
 P[P[,'cis+trans'],'colClass'] = 'cis+trans'                                    #
 #------------------------------------------------------------------------------#
 
 #-------------------------------------------------------------------------------#
-# cis minus trans --> A1!=A2 & P1!=P2 & A1:A2!=P1:P2 & sign(A1:A2)!=sign(P1:P2) #
+# cis minus trans --> A1!=A2 & P1!=P2 & P[,'P.fm.m']/P[,'F1.fm.m'] < 1,'cis-trans'] #
 P[P[,'cis-trans'],'colClass'] = 'cis-trans'                                     #
 #-------------------------------------------------------------------------------#
 
@@ -149,5 +152,12 @@ P[is.na(P[,'colClass']),'colClass'] = 'ambiguous'                           #
 #----------------------------------------------------------------------------
 
 # save data frame for future analyses
-write.table(P,paste('.../effectTable_c172_F1',ind,'FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep='_'))
+write.table(P,paste('effectTable_c172_F1',ind,'FDR10_minCov10_aseReadCounts_refCorrected_F1normalized_genomicMask_STAR_duprem.txt',sep='_'))
 
+# plots
+Pplot = P[P[,'colClass']!='ambiguous' & P[,'colClass']!='conserved',]
+
+# with log ratio
+g = ggplot(Pplot)
+g = g + geom_point(aes(foldchange2logratio(P.fm.m),foldchange2logratio(F1.fm.m),colour=colClass),cex=0.7,alpha=0.7)
+g
